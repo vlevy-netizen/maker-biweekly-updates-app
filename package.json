@@ -1,0 +1,10 @@
+{
+  "name": "maker-updates",
+  "version": "1.0.0",
+  "main": "app.js",
+  "license": "MIT",
+  "dependencies": {
+    "@slack/bolt": "^3.18.0",
+    "dayjs": "^1.11.11"
+  }
+}
