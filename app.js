@@ -173,7 +173,7 @@ function buildMessage(header, projects) {
 }
 
 // Slash command
-app.command("/maker-update", async ({ ack, body, client }) => {
+app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
   await ack();
   await client.views.open({ trigger_id: body.trigger_id, view: headerModal({ user: body.user_name }) });
 });
