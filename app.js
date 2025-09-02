@@ -2,7 +2,7 @@ const { App } = require("@slack/bolt");
 const dayjs = require("dayjs");
 const express = require("express");
 
-// Initialize app with tokens & Socket Mode
+// --- Initialize Bolt (Socket Mode) ---
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   signingSecret: process.env.SLACK_SIGNING_SECRET,
@@ -10,7 +10,8 @@ const app = new App({
   appToken: process.env.SLACK_APP_TOKEN,
 });
 
-// Utility to build header modal
+// --- Small helpers / UI builders ---
+
 function headerModal({ user } = {}) {
   return {
     type: "modal",
@@ -86,13 +87,17 @@ const RAG = ["Green", "Yellow", "Red"];
 const GTM = ["Discovery", "Alpha", "Beta", "GA"];
 const PHASE = ["Design", "Build", "QA", "Deploy"];
 
-// Utility: project modal
 function projectModal(meta) {
   return {
     type: "modal",
     callback_id: "project_submit",
     title: { type: "plain_text", text: `Add Project (${meta.projects.length + 1})` },
+    close: { type: "plain_text", text: "Close" }, // <-- important (have close or submit)
     blocks: [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: "*Add one project, then Add another or Done.*" },
+      },
       {
         type: "input",
         block_id: "p_name",
@@ -146,7 +151,7 @@ function projectModal(meta) {
         type: "actions",
         block_id: "next_action",
         elements: [
-          { type: "button", text: { type: "plain_text", text: "➕ Add another" }, action_id: "add_another" },
+          { type: "button", text: { type: "plain_text", text: "➕ Add another" }, action_id: "add_another", style: "primary" },
           { type: "button", text: { type: "plain_text", text: "✅ Done" }, action_id: "done" },
         ],
       },
@@ -155,7 +160,6 @@ function projectModal(meta) {
   };
 }
 
-// Build Slack message
 function buildMessage(header, projects) {
   const head = `*🧱 MAKER BIWEEKLY UPDATE*\n*Date:* ${header.date}   *Submitted by:* ${header.name}\n*Squad:* ${header.squad}${header.roadmap ? `   *Roadmap:* ${header.roadmap}` : ""}\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${header.focus || "_(none provided)_"}\n\n*PROJECT UPDATES*`;
   const blocks = [{ type: "section", text: { type: "mrkdwn", text: head } }, { type: "divider" }];
@@ -173,14 +177,16 @@ function buildMessage(header, projects) {
   return blocks;
 }
 
-// Slash command (make sure matches your Slack command!)
+// --- Slash command ---
 app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
+  console.log("Slash command received");
   await ack();
   await client.views.open({ trigger_id: body.trigger_id, view: headerModal({ user: body.user_name }) });
 });
 
-// Handle header modal → push next modal
+// --- Header modal submit → PUSH Project modal ---
 app.view("header_submit", async ({ ack, view }) => {
+  console.log("Header submit received");
   const vals = view.state.values;
   const header = {
     channel: vals.post_channel.channel.selected_conversation,
@@ -198,9 +204,10 @@ app.view("header_submit", async ({ ack, view }) => {
   });
 });
 
-// Add another project
+// --- Project modal actions ---
 app.action("add_another", async ({ ack, body, client }) => {
   await ack();
+  console.log("Add another clicked");
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
   meta.projects.push({
@@ -214,9 +221,9 @@ app.action("add_another", async ({ ack, body, client }) => {
   await client.views.update({ view_id: body.view.id, view: projectModal(meta) });
 });
 
-// Done → post to channel
 app.action("done", async ({ ack, body, client }) => {
   await ack();
+  console.log("Done clicked");
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
   if (vals.p_name?.val?.value) {
@@ -242,14 +249,18 @@ app.action("done", async ({ ack, body, client }) => {
   });
 });
 
-// --- Express server for Render healthcheck ---
+// --- Global error log (super helpful) ---
+app.error((err) => {
+  console.error("Bolt App Error:", err);
+});
+
+// --- Tiny Express server so Render Free sees an open port ---
 const http = express();
 const PORT = process.env.PORT || 3000;
-
 http.get("/", (_req, res) => res.send("OK"));
 
 (async () => {
-  await app.start(PORT);
+  await app.start(PORT);             // starts Bolt (Socket Mode)
   http.listen(PORT, () => console.log(`HTTP healthcheck on port ${PORT}`));
   console.log("⚡ Maker Update app running (Web Service mode)");
 })();
