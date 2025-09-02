@@ -1,5 +1,6 @@
 const { App } = require("@slack/bolt");
 const dayjs = require("dayjs");
+const express = require("express");
 
 // Initialize app with tokens & Socket Mode
 const app = new App({
@@ -172,7 +173,7 @@ function buildMessage(header, projects) {
   return blocks;
 }
 
-// Slash command
+// Slash command (make sure matches your Slack command!)
 app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
   await ack();
   await client.views.open({ trigger_id: body.trigger_id, view: headerModal({ user: body.user_name }) });
@@ -238,7 +239,14 @@ app.action("done", async ({ ack, body, client }) => {
   });
 });
 
+// --- Express server for Render healthcheck ---
+const http = express();
+const PORT = process.env.PORT || 3000;
+
+http.get("/", (_req, res) => res.send("OK"));
+
 (async () => {
-  await app.start(process.env.PORT || 3000);
-  console.log("⚡ Maker Update app running");
+  await app.start(PORT);
+  http.listen(PORT, () => console.log(`HTTP healthcheck on port ${PORT}`));
+  console.log("⚡ Maker Update app running (Web Service mode)");
 })();
