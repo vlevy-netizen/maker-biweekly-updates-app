@@ -40,19 +40,31 @@ function richToMrkdwn(rt) {
   return walk(rt).trim();
 }
 
-// Format roadmap URL as a clean hyperlink (<url|Link>)
-function formatRoadmap(url) {
+// Format URL as a clean hyperlink (<url|Link>)
+function asLink(url, label = "Link") {
   if (!url) return "";
-  const isUrl = /^https?:\/\//i.test(url);
-  const safe = isUrl ? url : `https://${url}`;
-  return `<${safe}|Link>`;
+  const looksLike = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  return `<${looksLike}|${label}>`;
 }
 
 // Emoji for RAG
-const RAG_EMOJI = { Green: "🟢", Yellow: "🟡", Red: "🔴" };
+const RAG_EMOJI = {
+  Green: "🟢",
+  Yellow: "🟡",
+  Red: "🔴",
+  Paused: "⚫",
+  Completed: "🔵",
+};
+
+// ---------- Lists ----------
+const RAG = ["Green", "Yellow", "Red", "Paused", "Completed"];
+const GTM = ["Pre-Alpha", "Alpha", "Beta", "GA", "Global"];
+const PHASE = ["Design", "Build/Development", "QA/UAT", "Deployment", "Hypercare"];
 
 // ---------- UI BUILDERS ----------
-function headerModal({ userId } = {}) {
+function headerModal({ userId }) {
+  // Keep the user id in private_metadata so we can mention them later
+  const meta = { projects: [], user: userId };
   return {
     type: "modal",
     callback_id: "header_submit",
@@ -70,22 +82,6 @@ function headerModal({ userId } = {}) {
           filter: { include: ["public", "private"] },
           action_id: "val",
         },
-      },
-      {
-        type: "input",
-        block_id: "date",
-        label: { type: "plain_text", text: "Date" },
-        element: {
-          type: "datepicker",
-          initial_date: dayjs().format("YYYY-MM-DD"),
-          action_id: "val",
-        },
-      },
-      {
-        type: "input",
-        block_id: "name_user",
-        label: { type: "plain_text", text: "Your Slack user" },
-        element: { type: "users_select", initial_user: userId, action_id: "val" },
       },
       {
         type: "input",
@@ -108,10 +104,7 @@ function headerModal({ userId } = {}) {
         element: {
           type: "plain_text_input",
           action_id: "val",
-          placeholder: {
-            type: "plain_text",
-            text: "Paste the URL (e.g., https://…)",
-          },
+          placeholder: { type: "plain_text", text: "Paste the URL (e.g., https://…)" },
         },
       },
       {
@@ -120,22 +113,18 @@ function headerModal({ userId } = {}) {
         block_id: "focus_rich",
         optional: false,
         label: { type: "plain_text", text: "Summary of focus areas this sprint" },
-        element: {
-          type: "rich_text_input",
-          action_id: "val",
-        },
+        element: { type: "rich_text_input", action_id: "val" },
       },
     ],
-    private_metadata: JSON.stringify({ projects: [] }),
+    private_metadata: JSON.stringify(meta),
   };
 }
 
-const RAG = ["Green", "Yellow", "Red"];
-const GTM = ["Discovery", "Alpha", "Beta", "GA"];
-const PHASE = ["Design", "Build", "QA", "Deploy"];
+function projectModal(meta, existing = null) {
+  const idx = existing ? existing.idx : meta.projects.length;
+  // Pre-fill helpers
+  const initialOption = (value) => value ? { text: { type: "plain_text", text: value }, value } : undefined;
 
-function projectModal(meta) {
-  const idx = meta.projects.length;
   return {
     type: "modal",
     callback_id: "project_submit",
@@ -145,19 +134,26 @@ function projectModal(meta) {
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: "*Add one project, then click* *Add another* *or* *Done*." },
+        text: { type: "mrkdwn", text: "*Add one project, then click* *Add another*, *Back*, *or* *Done*." },
       },
       {
         type: "input",
         block_id: `p_name_${idx}`,
         label: { type: "plain_text", text: "Project name" },
-        element: { type: "plain_text_input", action_id: "val" },
+        element: { type: "plain_text_input", action_id: "val", initial_value: existing?.name || "" },
+      },
+      {
+        type: "input",
+        block_id: `p_jira_${idx}`,
+        label: { type: "plain_text", text: "Jira Initiative Link" },
+        element: { type: "plain_text_input", action_id: "val", initial_value: existing?.jira || "" },
+        optional: true,
       },
       {
         type: "input",
         block_id: `p_tldr_${idx}`,
         label: { type: "plain_text", text: "TL;DR (rich text)" },
-        element: { type: "rich_text_input", action_id: "val" },
+        element: { type: "rich_text_input", action_id: "val" }, // Slack won't let us pre-fill rich_text_input
       },
       {
         type: "input",
@@ -166,6 +162,7 @@ function projectModal(meta) {
         element: {
           type: "static_select",
           action_id: "val",
+          initial_option: initialOption(existing?.rag),
           options: RAG.map((r) => ({ text: { type: "plain_text", text: r }, value: r })),
         },
       },
@@ -176,6 +173,7 @@ function projectModal(meta) {
         element: {
           type: "static_select",
           action_id: "val",
+          initial_option: initialOption(existing?.gtm),
           options: GTM.map((g) => ({ text: { type: "plain_text", text: g }, value: g })),
         },
       },
@@ -184,7 +182,7 @@ function projectModal(meta) {
         optional: true,
         block_id: `p_launch_${idx}`,
         label: { type: "plain_text", text: "Target launch date" },
-        element: { type: "datepicker", action_id: "val" },
+        element: { type: "datepicker", action_id: "val", initial_date: existing?.launch || undefined },
       },
       {
         type: "input",
@@ -193,6 +191,7 @@ function projectModal(meta) {
         element: {
           type: "static_select",
           action_id: "val",
+          initial_option: initialOption(existing?.phase),
           options: PHASE.map((p) => ({ text: { type: "plain_text", text: p }, value: p })),
         },
       },
@@ -200,8 +199,18 @@ function projectModal(meta) {
         type: "actions",
         block_id: `next_action_${idx}`,
         elements: [
+          { type: "button", text: { type: "plain_text", text: "◀︎ Back" }, action_id: "back" },
           { type: "button", text: { type: "plain_text", text: "➕ Add another" }, action_id: "add_another", style: "primary" },
           { type: "button", text: { type: "plain_text", text: "✅ Done" }, action_id: "done" },
+        ],
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "_Note: Slack can’t prefill rich-text fields. If you go Back, TL;DR will be blank; other fields are prefilled._",
+          },
         ],
       },
     ],
@@ -210,31 +219,31 @@ function projectModal(meta) {
 }
 
 // Build final message
-function buildMessage(header, projects) {
-  const submittedBy = header.user ? `<@${header.user}>` : header.name || "(unknown)";
+function buildMessage(metaHeader, projects) {
+  const today = dayjs().format("YYYY-MM-DD");
+  const submittedBy = metaHeader.user ? `<@${metaHeader.user}>` : "(unknown)";
   const head =
     `*🍫 MAKER BIWEEKLY UPDATE*\n` +
-    `*Date:* ${header.date}   *Submitted by:* ${submittedBy}\n` +
-    `*Squad:* ${header.squad}` +
-    (header.roadmap ? `   *Roadmap:* ${formatRoadmap(header.roadmap)}` : "") +
-    `\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${header.focus || "_(none provided)_"}\n\n*PROJECT UPDATES*`;
+    `*Date:* ${today}   *Submitted by:* ${submittedBy}\n` +
+    `*Squad:* ${metaHeader.squad}` +
+    (metaHeader.roadmap ? `   *Roadmap:* ${asLink(metaHeader.roadmap)}` : "") +
+    `\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${metaHeader.focus || "_(none provided)_"}\n\n*PROJECT UPDATES*`;
 
   const blocks = [{ type: "section", text: { type: "mrkdwn", text: head } }, { type: "divider" }];
 
   projects.forEach((p, i) => {
     const ragIcon = RAG_EMOJI[p.rag] || "";
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text:
-          `*${i === 0 ? "💥" : "💡"} ${p.name}*\n` +
-          (p.tldr ? `*TL;DR*\n${p.tldr}\n` : "") + // label on its own line so bullets render nicely
-          `*RAG:* ${ragIcon} ${p.rag}   *GTM:* ${p.gtm}` +
-          (p.launch ? `   *Target launch:* ${p.launch}` : "") +
-          `\n*Phase:* ${p.phase}`,
-      },
-    });
+    const lines = [];
+    lines.push(`*${i === 0 ? "💥" : "💡"} ${p.name}*`);
+    if (p.jira) lines.push(`*Jira:* ${asLink(p.jira, "Initiative")}`);
+    if (p.tldr) lines.push(`*TL;DR*\n${p.tldr}`);
+    lines.push(
+      `*RAG:* ${ragIcon} ${p.rag}   *GTM:* ${p.gtm}` +
+        (p.launch ? `   *Target launch:* ${p.launch}` : "")
+    );
+    lines.push(`*Phase:* ${p.phase}`);
+
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: lines.join("\n") } });
     blocks.push({ type: "divider" });
   });
   return blocks;
@@ -254,23 +263,21 @@ app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
 // Header submit -> push first Project modal
 app.view("header_submit", async ({ ack, view }) => {
   const vals = view.state.values;
-  // Roadmap (required plain text), Summary (required rich text)
-  const roadmap = vals.roadmap_link?.val?.value;
+  const incomingMeta = JSON.parse(view.private_metadata || "{}"); // has user id
+  const header = {
+    channel: vals.post_channel?.val?.selected_conversation,
+    squad: vals.squad?.val?.selected_option?.value,
+    roadmap: vals.roadmap_link?.val?.value,
+  };
 
   const focusVal = vals.focus_rich?.val;
   let focus = "";
   if (focusVal?.value) focus = focusVal.value;
   else if (focusVal?.rich_text_value) focus = richToMrkdwn(focusVal.rich_text_value);
 
-  const header = {
-    channel: vals.post_channel?.val?.selected_conversation,
-    date: vals.date?.val?.selected_date,
-    user: vals.name_user?.val?.selected_user,
-    squad: vals.squad?.val?.selected_option?.value,
-    roadmap,
-    focus,
-  };
-  const meta = { header, projects: [] };
+  const meta = { header, projects: [], user: incomingMeta.user };
+  header.user = meta.user; // stash for message header
+
   await ack({ response_action: "push", view: projectModal(meta) });
 });
 
@@ -280,41 +287,64 @@ app.action("add_another", async ({ ack, body, client }) => {
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
 
-  const name = getBlock(vals, "p_name_")?.val?.value;
-  const tldrVal = getBlock(vals, "p_tldr_")?.val;
-  const rag = getBlock(vals, "p_rag_")?.val?.selected_option?.value;
-  const gtm = getBlock(vals, "p_gtm_")?.val?.selected_option?.value;
-  const launch = getBlock(vals, "p_launch_")?.val?.selected_date;
-  const phase = getBlock(vals, "p_phase_")?.val?.selected_option?.value;
+  const idxKey = Object.keys(vals).find(k => k.startsWith("p_name_"));
+  const idx = Number(idxKey.split("_").pop());
+
+  const name = getBlock(vals, `p_name_${idx}`)?.val?.value;
+  const jira = getBlock(vals, `p_jira_${idx}`)?.val?.value;
+  const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
+  const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
+  const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
+  const launch = getBlock(vals, `p_launch_${idx}`)?.val?.selected_date;
+  const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
 
   let tldr = "";
   if (tldrVal?.value) tldr = tldrVal.value;
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
-  meta.projects.push({ name, tldr, rag, gtm, launch, phase });
+  meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
+
   await client.views.update({ view_id: body.view.id, view: projectModal(meta) });
 });
 
-// Done -> include current project (if filled) and post to channel
+// Back -> open previous saved project for quick edits (TL;DR can’t be prefilled)
+app.action("back", async ({ ack, body, client }) => {
+  await ack();
+  const meta = JSON.parse(body.view.private_metadata);
+  const last = meta.projects.pop(); // previous saved
+  if (!last) {
+    // Nothing saved yet; just keep the same view
+    return;
+  }
+  // Reopen editor with previous values
+  const existing = { ...last, idx: meta.projects.length };
+  await client.views.update({ view_id: body.view.id, view: projectModal(meta, existing) });
+});
+
+// Done -> include current (if entered) and post
 app.action("done", async ({ ack, body, client }) => {
   await ack();
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
 
-  const nameBlock = getBlock(vals, "p_name_");
+  const idxKey = Object.keys(vals).find(k => k.startsWith("p_name_"));
+  const idx = Number(idxKey.split("_").pop());
+  const nameBlock = getBlock(vals, `p_name_${idx}`);
+
   if (nameBlock?.val?.value) {
     const name = nameBlock.val.value;
-    const tldrVal = getBlock(vals, "p_tldr_")?.val;
-    const rag = getBlock(vals, "p_rag_")?.val?.selected_option?.value;
-    const gtm = getBlock(vals, "p_gtm_")?.val?.selected_option?.value;
-    const launch = getBlock(vals, "p_launch_")?.val?.selected_date;
-    const phase = getBlock(vals, "p_phase_")?.val?.selected_option?.value;
+    const jira = getBlock(vals, `p_jira_${idx}`)?.val?.value;
+    const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
+    const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
+    const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
+    const launch = getBlock(vals, `p_launch_${idx}`)?.val?.selected_date;
+    const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
 
     let tldr = "";
     if (tldrVal?.value) tldr = tldrVal.value;
     else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
-    meta.projects.push({ name, tldr, rag, gtm, launch, phase });
+    meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
   }
 
   const blocks = buildMessage(meta.header, meta.projects);
@@ -332,22 +362,26 @@ app.action("done", async ({ ack, body, client }) => {
 });
 
 // Handle "Save & Post" submission
-app.view("project_submit", async ({ ack, body, view, client }) => {
+app.view("project_submit", async ({ ack, view, client }) => {
   const meta = JSON.parse(view.private_metadata);
   const vals = view.state.values;
 
-  const name = getBlock(vals, "p_name_")?.val?.value;
-  const tldrVal = getBlock(vals, "p_tldr_")?.val;
-  const rag = getBlock(vals, "p_rag_")?.val?.selected_option?.value;
-  const gtm = getBlock(vals, "p_gtm_")?.val?.selected_option?.value;
-  const launch = getBlock(vals, "p_launch_")?.val?.selected_date;
-  const phase = getBlock(vals, "p_phase_")?.val?.selected_option?.value;
+  const idxKey = Object.keys(vals).find(k => k.startsWith("p_name_"));
+  const idx = Number(idxKey.split("_").pop());
+
+  const name = getBlock(vals, `p_name_${idx}`)?.val?.value;
+  const jira = getBlock(vals, `p_jira_${idx}`)?.val?.value;
+  const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
+  const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
+  const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
+  const launch = getBlock(vals, `p_launch_${idx}`)?.val?.selected_date;
+  const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
 
   let tldr = "";
   if (tldrVal?.value) tldr = tldrVal.value;
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
-  if (name) meta.projects.push({ name, tldr, rag, gtm, launch, phase });
+  if (name) meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
 
   await ack();
 
