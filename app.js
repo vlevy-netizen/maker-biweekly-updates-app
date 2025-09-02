@@ -179,9 +179,8 @@ app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
   await client.views.open({ trigger_id: body.trigger_id, view: headerModal({ user: body.user_name }) });
 });
 
-// Handle header modal
-app.view("header_submit", async ({ ack, body, view, client }) => {
-  await ack();
+// Handle header modal → push next modal
+app.view("header_submit", async ({ ack, view }) => {
   const vals = view.state.values;
   const header = {
     channel: vals.post_channel.channel.selected_conversation,
@@ -192,7 +191,11 @@ app.view("header_submit", async ({ ack, body, view, client }) => {
     focus: vals.focus?.val?.value,
   };
   const meta = { header, projects: [] };
-  await client.views.open({ trigger_id: body.trigger_id, view: projectModal(meta) });
+
+  await ack({
+    response_action: "push",
+    view: projectModal(meta),
+  });
 });
 
 // Add another project
