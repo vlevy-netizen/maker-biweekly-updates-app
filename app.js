@@ -27,7 +27,6 @@ function headerModal({ user } = {}) {
         element: {
           type: "conversations_select",
           default_to_current_conversation: true,
-          response_url_enabled: true,
           filter: { include: ["public", "private"] },
           action_id: "channel",
         },
@@ -91,12 +90,13 @@ function projectModal(meta) {
   return {
     type: "modal",
     callback_id: "project_submit",
-    title: { type: "plain_text", text: `Add Project (${meta.projects.length + 1})` },
-    close: { type: "plain_text", text: "Close" }, // <-- important (have close or submit)
+    title: { type: "plain_text", text: `Project ${meta.projects.length + 1}` }, // shorter title
+    submit: { type: "plain_text", text: "Save" }, // added submit
+    close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: "*Add one project, then Add another or Done.*" },
+        text: { type: "mrkdwn", text: "*Add one project, then click Add another or Done.*" },
       },
       {
         type: "input",
@@ -249,7 +249,7 @@ app.action("done", async ({ ack, body, client }) => {
   });
 });
 
-// --- Global error log (super helpful) ---
+// --- Global error log ---
 app.error((err) => {
   console.error("Bolt App Error:", err);
 });
