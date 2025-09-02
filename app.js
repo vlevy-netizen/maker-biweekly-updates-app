@@ -11,13 +11,12 @@ const app = new App({
 });
 
 // ---------- Utilities ----------
-
 function getBlock(values, prefix) {
   const key = Object.keys(values).find((k) => k.startsWith(prefix));
   return key ? values[key] : undefined;
 }
 
-// Convert Slack rich_text to mrkdwn
+// Convert Slack rich_text to mrkdwn, preserving bullets, links, emoji, mentions
 function richToMrkdwn(rt) {
   if (!rt) return "";
   function walk(el) {
@@ -41,8 +40,18 @@ function richToMrkdwn(rt) {
   return walk(rt).trim();
 }
 
-// ---------- UI BUILDERS ----------
+// Format roadmap URL as a clean hyperlink (<url|Link>)
+function formatRoadmap(url) {
+  if (!url) return "";
+  const isUrl = /^https?:\/\//i.test(url);
+  const safe = isUrl ? url : `https://${url}`;
+  return `<${safe}|Link>`;
+}
 
+// Emoji for RAG
+const RAG_EMOJI = { Green: "🟢", Yellow: "🟡", Red: "🔴" };
+
+// ---------- UI BUILDERS ----------
 function headerModal({ userId } = {}) {
   return {
     type: "modal",
@@ -91,22 +100,29 @@ function headerModal({ userId } = {}) {
         },
       },
       {
+        // REQUIRED roadmap link
         type: "input",
-        optional: true,
-        block_id: "roadmap",
+        block_id: "roadmap_link",
+        optional: false,
         label: { type: "plain_text", text: "Link to roadmap or project tracker" },
-        element: { type: "plain_text_input", action_id: "val" },
-      },
-      {
-        type: "input",
-        optional: true,
-        block_id: "focus",
-        label: { type: "plain_text", text: "Summary of focus areas this sprint" },
         element: {
           type: "plain_text_input",
-          multiline: true,
           action_id: "val",
-          placeholder: { type: "plain_text", text: "Emojis (:rocket:) & bullets (-, •) supported when posted" },
+          placeholder: {
+            type: "plain_text",
+            text: "Paste the URL (e.g., https://…)",
+          },
+        },
+      },
+      {
+        // REQUIRED rich-text summary
+        type: "input",
+        block_id: "focus_rich",
+        optional: false,
+        label: { type: "plain_text", text: "Summary of focus areas this sprint" },
+        element: {
+          type: "rich_text_input",
+          action_id: "val",
         },
       },
     ],
@@ -119,12 +135,12 @@ const GTM = ["Discovery", "Alpha", "Beta", "GA"];
 const PHASE = ["Design", "Build", "QA", "Deploy"];
 
 function projectModal(meta) {
-  const idx = meta.projects.length; // next project index
+  const idx = meta.projects.length;
   return {
     type: "modal",
     callback_id: "project_submit",
     title: { type: "plain_text", text: `Project ${idx + 1}` },
-    submit: { type: "plain_text", text: "Save & Post" }, // clearer, and we now handle it
+    submit: { type: "plain_text", text: "Save & Post" },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {
@@ -141,7 +157,7 @@ function projectModal(meta) {
         type: "input",
         block_id: `p_tldr_${idx}`,
         label: { type: "plain_text", text: "TL;DR (rich text)" },
-        element: { type: "rich_text_input", action_id: "val" }, // toolbar
+        element: { type: "rich_text_input", action_id: "val" },
       },
       {
         type: "input",
@@ -193,26 +209,28 @@ function projectModal(meta) {
   };
 }
 
+// Build final message
 function buildMessage(header, projects) {
   const submittedBy = header.user ? `<@${header.user}>` : header.name || "(unknown)";
   const head =
-    `*🧱 MAKER BIWEEKLY UPDATE*\n` +
+    `*🍫 MAKER BIWEEKLY UPDATE*\n` +
     `*Date:* ${header.date}   *Submitted by:* ${submittedBy}\n` +
     `*Squad:* ${header.squad}` +
-    (header.roadmap ? `   *Roadmap:* ${header.roadmap}` : "") +
+    (header.roadmap ? `   *Roadmap:* ${formatRoadmap(header.roadmap)}` : "") +
     `\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${header.focus || "_(none provided)_"}\n\n*PROJECT UPDATES*`;
 
   const blocks = [{ type: "section", text: { type: "mrkdwn", text: head } }, { type: "divider" }];
 
   projects.forEach((p, i) => {
+    const ragIcon = RAG_EMOJI[p.rag] || "";
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
         text:
           `*${i === 0 ? "💥" : "💡"} ${p.name}*\n` +
-          (p.tldr ? `*TL;DR:* ${p.tldr}\n` : "") +
-          `*RAG:* ${p.rag}   *GTM:* ${p.gtm}` +
+          (p.tldr ? `*TL;DR*\n${p.tldr}\n` : "") + // label on its own line so bullets render nicely
+          `*RAG:* ${ragIcon} ${p.rag}   *GTM:* ${p.gtm}` +
           (p.launch ? `   *Target launch:* ${p.launch}` : "") +
           `\n*Phase:* ${p.phase}`,
       },
@@ -226,7 +244,6 @@ function buildMessage(header, projects) {
 
 // Slash command
 app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
-  console.log("Slash command received");
   await ack();
   await client.views.open({
     trigger_id: body.trigger_id,
@@ -236,15 +253,22 @@ app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
 
 // Header submit -> push first Project modal
 app.view("header_submit", async ({ ack, view }) => {
-  console.log("Header submit received");
   const vals = view.state.values;
+  // Roadmap (required plain text), Summary (required rich text)
+  const roadmap = vals.roadmap_link?.val?.value;
+
+  const focusVal = vals.focus_rich?.val;
+  let focus = "";
+  if (focusVal?.value) focus = focusVal.value;
+  else if (focusVal?.rich_text_value) focus = richToMrkdwn(focusVal.rich_text_value);
+
   const header = {
     channel: vals.post_channel?.val?.selected_conversation,
     date: vals.date?.val?.selected_date,
     user: vals.name_user?.val?.selected_user,
     squad: vals.squad?.val?.selected_option?.value,
-    roadmap: vals.roadmap?.val?.value,
-    focus: vals.focus?.val?.value,
+    roadmap,
+    focus,
   };
   const meta = { header, projects: [] };
   await ack({ response_action: "push", view: projectModal(meta) });
@@ -253,7 +277,6 @@ app.view("header_submit", async ({ ack, view }) => {
 // Add another project
 app.action("add_another", async ({ ack, body, client }) => {
   await ack();
-  console.log("Add another clicked");
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
 
@@ -269,14 +292,12 @@ app.action("add_another", async ({ ack, body, client }) => {
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
   meta.projects.push({ name, tldr, rag, gtm, launch, phase });
-
   await client.views.update({ view_id: body.view.id, view: projectModal(meta) });
 });
 
 // Done -> include current project (if filled) and post to channel
 app.action("done", async ({ ack, body, client }) => {
   await ack();
-  console.log("Done clicked");
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
 
@@ -310,9 +331,8 @@ app.action("done", async ({ ack, body, client }) => {
   });
 });
 
-// NEW: Handle clicking the modal's "Save & Post" (view submission)
+// Handle "Save & Post" submission
 app.view("project_submit", async ({ ack, body, view, client }) => {
-  console.log("Project submit (Save & Post)");
   const meta = JSON.parse(view.private_metadata);
   const vals = view.state.values;
 
@@ -327,11 +347,8 @@ app.view("project_submit", async ({ ack, body, view, client }) => {
   if (tldrVal?.value) tldr = tldrVal.value;
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
-  if (name) {
-    meta.projects.push({ name, tldr, rag, gtm, launch, phase });
-  }
+  if (name) meta.projects.push({ name, tldr, rag, gtm, launch, phase });
 
-  // Ack first (required), then post & replace the modal
   await ack();
 
   const blocks = buildMessage(meta.header, meta.projects);
