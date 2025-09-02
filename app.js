@@ -10,9 +10,9 @@ const app = new App({
   appToken: process.env.SLACK_APP_TOKEN,
 });
 
-// --- Small helpers / UI builders ---
+// ---------- UI BUILDERS ----------
 
-function headerModal({ user } = {}) {
+function headerModal({ userId } = {}) {
   return {
     type: "modal",
     callback_id: "header_submit",
@@ -28,7 +28,7 @@ function headerModal({ user } = {}) {
           type: "conversations_select",
           default_to_current_conversation: true,
           filter: { include: ["public", "private"] },
-          action_id: "channel",
+          action_id: "val",
         },
       },
       {
@@ -42,12 +42,13 @@ function headerModal({ user } = {}) {
         },
       },
       {
+        // Slack mention picker for the user's name
         type: "input",
-        block_id: "name",
-        label: { type: "plain_text", text: "Your name" },
+        block_id: "name_user",
+        label: { type: "plain_text", text: "Your Slack user" },
         element: {
-          type: "plain_text_input",
-          initial_value: user,
+          type: "users_select",
+          initial_user: userId,
           action_id: "val",
         },
       },
@@ -75,7 +76,13 @@ function headerModal({ user } = {}) {
         optional: true,
         block_id: "focus",
         label: { type: "plain_text", text: "Summary of focus areas this sprint" },
-        element: { type: "plain_text_input", multiline: true, action_id: "val" },
+        element: {
+          type: "plain_text_input",
+          multiline: true,
+          action_id: "val",
+          // Emojis and bullets are supported in mrkdwn when we post
+          placeholder: { type: "plain_text", text: "You can use emojis (:rocket:) and bullets (-, •) here" },
+        },
       },
     ],
     private_metadata: JSON.stringify({ projects: [] }),
@@ -86,29 +93,35 @@ const RAG = ["Green", "Yellow", "Red"];
 const GTM = ["Discovery", "Alpha", "Beta", "GA"];
 const PHASE = ["Design", "Build", "QA", "Deploy"];
 
+/** A fresh (cleared) project modal every time */
 function projectModal(meta) {
   return {
     type: "modal",
     callback_id: "project_submit",
-    title: { type: "plain_text", text: `Project ${meta.projects.length + 1}` }, // shorter title
-    submit: { type: "plain_text", text: "Save" }, // added submit
+    title: { type: "plain_text", text: `Project ${meta.projects.length + 1}` },
+    submit: { type: "plain_text", text: "Save" }, // keeps Slack happy
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: "*Add one project, then click Add another or Done.*" },
+        text: { type: "mrkdwn", text: "*Add one project, then click* *Add another* *or* *Done*." },
       },
       {
         type: "input",
         block_id: "p_name",
         label: { type: "plain_text", text: "Project name" },
-        element: { type: "plain_text_input", action_id: "val" },
+        element: { type: "plain_text_input", action_id: "val", initial_value: "" }, // clear
       },
       {
         type: "input",
         block_id: "p_tldr",
         label: { type: "plain_text", text: "TL;DR" },
-        element: { type: "plain_text_input", multiline: true, action_id: "val" },
+        element: {
+          type: "plain_text_input", // emojis & bullets render fine in the final message
+          multiline: true,
+          action_id: "val",
+          initial_value: "", // clear
+        },
       },
       {
         type: "input",
@@ -118,6 +131,7 @@ function projectModal(meta) {
           type: "static_select",
           action_id: "val",
           options: RAG.map((r) => ({ text: { type: "plain_text", text: r }, value: r })),
+          // no initial_option -> clear
         },
       },
       {
@@ -135,7 +149,7 @@ function projectModal(meta) {
         optional: true,
         block_id: "p_launch",
         label: { type: "plain_text", text: "Target launch date" },
-        element: { type: "datepicker", action_id: "val" },
+        element: { type: "datepicker", action_id: "val" }, // no initial_date -> clear
       },
       {
         type: "input",
@@ -160,8 +174,16 @@ function projectModal(meta) {
   };
 }
 
+/** Compose the final message blocks */
 function buildMessage(header, projects) {
-  const head = `*🧱 MAKER BIWEEKLY UPDATE*\n*Date:* ${header.date}   *Submitted by:* ${header.name}\n*Squad:* ${header.squad}${header.roadmap ? `   *Roadmap:* ${header.roadmap}` : ""}\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${header.focus || "_(none provided)_"}\n\n*PROJECT UPDATES*`;
+  const submittedBy = header.user ? `<@${header.user}>` : header.name || "(unknown)";
+  const head =
+    `*🧱 MAKER BIWEEKLY UPDATE*\n` +
+    `*Date:* ${header.date}   *Submitted by:* ${submittedBy}\n` +
+    `*Squad:* ${header.squad}` +
+    (header.roadmap ? `   *Roadmap:* ${header.roadmap}` : "") +
+    `\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${header.focus || "_(none provided)_"}\n\n*PROJECT UPDATES*`;
+
   const blocks = [{ type: "section", text: { type: "mrkdwn", text: head } }, { type: "divider" }];
 
   projects.forEach((p, i) => {
@@ -169,7 +191,12 @@ function buildMessage(header, projects) {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*${i === 0 ? "💥" : "💡"} ${p.name}*\n*TL;DR:* ${p.tldr}\n*RAG:* ${p.rag}   *GTM:* ${p.gtm}${p.launch ? `   *Target launch:* ${p.launch}` : ""}\n*Phase:* ${p.phase}`,
+        text:
+          `*${i === 0 ? "💥" : "💡"} ${p.name}*\n` +
+          `${p.tldr ? `*TL;DR:* ${p.tldr}\n` : ""}` +
+          `*RAG:* ${p.rag}   *GTM:* ${p.gtm}` +
+          (p.launch ? `   *Target launch:* ${p.launch}` : "") +
+          `\n*Phase:* ${p.phase}`,
       },
     });
     blocks.push({ type: "divider" });
@@ -177,39 +204,42 @@ function buildMessage(header, projects) {
   return blocks;
 }
 
-// --- Slash command ---
+// ---------- HANDLERS ----------
+
+// Slash command
 app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
   console.log("Slash command received");
   await ack();
-  await client.views.open({ trigger_id: body.trigger_id, view: headerModal({ user: body.user_name }) });
+  await client.views.open({
+    trigger_id: body.trigger_id,
+    view: headerModal({ userId: body.user_id }),
+  });
 });
 
-// --- Header modal submit → PUSH Project modal ---
+// Header submit -> push first Project modal
 app.view("header_submit", async ({ ack, view }) => {
   console.log("Header submit received");
   const vals = view.state.values;
   const header = {
-    channel: vals.post_channel.channel.selected_conversation,
+    channel: vals.post_channel.val.selected_conversation,
     date: vals.date.val.selected_date,
-    name: vals.name.val.value,
+    user: vals.name_user.val.selected_user, // store user id for proper mention
     squad: vals.squad.val.selected_option.value,
     roadmap: vals.roadmap?.val?.value,
     focus: vals.focus?.val?.value,
   };
   const meta = { header, projects: [] };
 
-  await ack({
-    response_action: "push",
-    view: projectModal(meta),
-  });
+  await ack({ response_action: "push", view: projectModal(meta) });
 });
 
-// --- Project modal actions ---
+// Add another project
 app.action("add_another", async ({ ack, body, client }) => {
   await ack();
   console.log("Add another clicked");
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
+
   meta.projects.push({
     name: vals.p_name.val.value,
     tldr: vals.p_tldr.val.value,
@@ -218,14 +248,18 @@ app.action("add_another", async ({ ack, body, client }) => {
     launch: vals.p_launch?.val?.selected_date,
     phase: vals.p_phase.val.selected_option.value,
   });
+
   await client.views.update({ view_id: body.view.id, view: projectModal(meta) });
 });
 
+// Done -> post to channel
 app.action("done", async ({ ack, body, client }) => {
   await ack();
   console.log("Done clicked");
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
+
+  // If user filled the current modal, include it too
   if (vals.p_name?.val?.value) {
     meta.projects.push({
       name: vals.p_name.val.value,
@@ -236,8 +270,10 @@ app.action("done", async ({ ack, body, client }) => {
       phase: vals.p_phase.val.selected_option.value,
     });
   }
+
   const blocks = buildMessage(meta.header, meta.projects);
   await client.chat.postMessage({ channel: meta.header.channel, blocks, text: "Maker Biweekly Update" });
+
   await client.views.update({
     view_id: body.view.id,
     view: {
@@ -249,18 +285,18 @@ app.action("done", async ({ ack, body, client }) => {
   });
 });
 
-// --- Global error log ---
+// Global error log
 app.error((err) => {
   console.error("Bolt App Error:", err);
 });
 
-// --- Tiny Express server so Render Free sees an open port ---
+// ---------- Render Free healthcheck ----------
 const http = express();
 const PORT = process.env.PORT || 3000;
 http.get("/", (_req, res) => res.send("OK"));
 
 (async () => {
-  await app.start(PORT);             // starts Bolt (Socket Mode)
+  await app.start(PORT);
   http.listen(PORT, () => console.log(`HTTP healthcheck on port ${PORT}`));
   console.log("⚡ Maker Update app running (Web Service mode)");
 })();
