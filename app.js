@@ -16,7 +16,7 @@ function getBlock(values, prefix) {
   return key ? values[key] : undefined;
 }
 
-// Convert Slack rich_text to mrkdwn, preserving bullets, links, emoji, mentions
+// Convert Slack rich_text to mrkdwn
 function richToMrkdwn(rt) {
   if (!rt) return "";
   function walk(el) {
@@ -40,7 +40,7 @@ function richToMrkdwn(rt) {
   return walk(rt).trim();
 }
 
-// Format URL as a clean hyperlink (<url|Link>)
+// Format URL as a clean hyperlink (<url|label>)
 function asLink(url, label = "Link") {
   if (!url) return "";
   const looksLike = /^https?:\/\//i.test(url) ? url : `https://${url}`;
@@ -63,7 +63,6 @@ const PHASE = ["Design", "Build/Development", "QA/UAT", "Deployment", "Hypercare
 
 // ---------- UI BUILDERS ----------
 function headerModal({ userId }) {
-  // Keep the user id in private_metadata so we can mention them later
   const meta = { projects: [], user: userId };
   return {
     type: "modal",
@@ -96,7 +95,6 @@ function headerModal({ userId }) {
         },
       },
       {
-        // REQUIRED roadmap link
         type: "input",
         block_id: "roadmap_link",
         optional: false,
@@ -108,7 +106,6 @@ function headerModal({ userId }) {
         },
       },
       {
-        // REQUIRED rich-text summary
         type: "input",
         block_id: "focus_rich",
         optional: false,
@@ -122,8 +119,8 @@ function headerModal({ userId }) {
 
 function projectModal(meta, existing = null) {
   const idx = existing ? existing.idx : meta.projects.length;
-  // Pre-fill helpers
-  const initialOption = (value) => value ? { text: { type: "plain_text", text: value }, value } : undefined;
+  const initialOption = (value) =>
+    value ? { text: { type: "plain_text", text: value }, value } : undefined;
 
   return {
     type: "modal",
@@ -134,7 +131,10 @@ function projectModal(meta, existing = null) {
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: "*Add one project, then click* *Add another*, *Back*, *or* *Done*." },
+        text: {
+          type: "mrkdwn",
+          text: "*Add one project, then click* *Add another*, *Back*, *or* *Done*.",
+        },
       },
       {
         type: "input",
@@ -153,7 +153,7 @@ function projectModal(meta, existing = null) {
         type: "input",
         block_id: `p_tldr_${idx}`,
         label: { type: "plain_text", text: "TL;DR (rich text)" },
-        element: { type: "rich_text_input", action_id: "val" }, // Slack won't let us pre-fill rich_text_input
+        element: { type: "rich_text_input", action_id: "val" },
       },
       {
         type: "input",
@@ -204,15 +204,6 @@ function projectModal(meta, existing = null) {
           { type: "button", text: { type: "plain_text", text: "✅ Done" }, action_id: "done" },
         ],
       },
-      {
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: "_Note: Slack can’t prefill rich-text fields. If you go Back, TL;DR will be blank; other fields are prefilled._",
-          },
-        ],
-      },
     ],
     private_metadata: JSON.stringify(meta),
   };
@@ -223,7 +214,7 @@ function buildMessage(metaHeader, projects) {
   const today = dayjs().format("YYYY-MM-DD");
   const submittedBy = metaHeader.user ? `<@${metaHeader.user}>` : "(unknown)";
   const head =
-    `*🍫 MAKER BIWEEKLY UPDATE*\n` +
+    `*🧱 MAKER BIWEEKLY UPDATE*\n` +
     `*Date:* ${today}   *Submitted by:* ${submittedBy}\n` +
     `*Squad:* ${metaHeader.squad}` +
     (metaHeader.roadmap ? `   *Roadmap:* ${asLink(metaHeader.roadmap)}` : "") +
@@ -249,6 +240,26 @@ function buildMessage(metaHeader, projects) {
   return blocks;
 }
 
+// --- Post helper with auto-join ---
+async function postMessageWithJoin(client, channel, blocks, text = "Maker Biweekly Update") {
+  try {
+    await client.chat.postMessage({ channel, blocks, text });
+  } catch (err) {
+    const code = err?.data?.error;
+    if (code === "channel_not_found" || code === "not_in_channel") {
+      try {
+        await client.conversations.join({ channel });
+        await client.chat.postMessage({ channel, blocks, text });
+      } catch (err2) {
+        console.error("Post after join failed:", err2);
+        throw err2;
+      }
+    } else {
+      throw err;
+    }
+  }
+}
+
 // ---------- HANDLERS ----------
 
 // Slash command
@@ -260,34 +271,32 @@ app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
   });
 });
 
-// Header submit -> push first Project modal
+// Header submit
 app.view("header_submit", async ({ ack, view }) => {
   const vals = view.state.values;
-  const incomingMeta = JSON.parse(view.private_metadata || "{}"); // has user id
+  const incomingMeta = JSON.parse(view.private_metadata || "{}");
   const header = {
     channel: vals.post_channel?.val?.selected_conversation,
     squad: vals.squad?.val?.selected_option?.value,
     roadmap: vals.roadmap_link?.val?.value,
+    user: incomingMeta.user,
   };
-
   const focusVal = vals.focus_rich?.val;
   let focus = "";
   if (focusVal?.value) focus = focusVal.value;
   else if (focusVal?.rich_text_value) focus = richToMrkdwn(focusVal.rich_text_value);
+  header.focus = focus;
 
   const meta = { header, projects: [], user: incomingMeta.user };
-  header.user = meta.user; // stash for message header
-
   await ack({ response_action: "push", view: projectModal(meta) });
 });
 
-// Add another project
+// Add another
 app.action("add_another", async ({ ack, body, client }) => {
   await ack();
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
-
-  const idxKey = Object.keys(vals).find(k => k.startsWith("p_name_"));
+  const idxKey = Object.keys(vals).find((k) => k.startsWith("p_name_"));
   const idx = Number(idxKey.split("_").pop());
 
   const name = getBlock(vals, `p_name_${idx}`)?.val?.value;
@@ -303,31 +312,25 @@ app.action("add_another", async ({ ack, body, client }) => {
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
   meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
-
   await client.views.update({ view_id: body.view.id, view: projectModal(meta) });
 });
 
-// Back -> open previous saved project for quick edits (TL;DR can’t be prefilled)
+// Back
 app.action("back", async ({ ack, body, client }) => {
   await ack();
   const meta = JSON.parse(body.view.private_metadata);
-  const last = meta.projects.pop(); // previous saved
-  if (!last) {
-    // Nothing saved yet; just keep the same view
-    return;
-  }
-  // Reopen editor with previous values
+  const last = meta.projects.pop();
+  if (!last) return;
   const existing = { ...last, idx: meta.projects.length };
   await client.views.update({ view_id: body.view.id, view: projectModal(meta, existing) });
 });
 
-// Done -> include current (if entered) and post
+// Done
 app.action("done", async ({ ack, body, client }) => {
   await ack();
   const meta = JSON.parse(body.view.private_metadata);
   const vals = body.view.state.values;
-
-  const idxKey = Object.keys(vals).find(k => k.startsWith("p_name_"));
+  const idxKey = Object.keys(vals).find((k) => k.startsWith("p_name_"));
   const idx = Number(idxKey.split("_").pop());
   const nameBlock = getBlock(vals, `p_name_${idx}`);
 
@@ -339,16 +342,14 @@ app.action("done", async ({ ack, body, client }) => {
     const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
     const launch = getBlock(vals, `p_launch_${idx}`)?.val?.selected_date;
     const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
-
     let tldr = "";
     if (tldrVal?.value) tldr = tldrVal.value;
     else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
-
     meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
   }
 
   const blocks = buildMessage(meta.header, meta.projects);
-  await client.chat.postMessage({ channel: meta.header.channel, blocks, text: "Maker Biweekly Update" });
+  await postMessageWithJoin(client, meta.header.channel, blocks);
 
   await client.views.update({
     view_id: body.view.id,
@@ -361,12 +362,11 @@ app.action("done", async ({ ack, body, client }) => {
   });
 });
 
-// Handle "Save & Post" submission
+// Save & Post
 app.view("project_submit", async ({ ack, view, client }) => {
   const meta = JSON.parse(view.private_metadata);
   const vals = view.state.values;
-
-  const idxKey = Object.keys(vals).find(k => k.startsWith("p_name_"));
+  const idxKey = Object.keys(vals).find((k) => k.startsWith("p_name_"));
   const idx = Number(idxKey.split("_").pop());
 
   const name = getBlock(vals, `p_name_${idx}`)?.val?.value;
@@ -384,9 +384,8 @@ app.view("project_submit", async ({ ack, view, client }) => {
   if (name) meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
 
   await ack();
-
   const blocks = buildMessage(meta.header, meta.projects);
-  await client.chat.postMessage({ channel: meta.header.channel, blocks, text: "Maker Biweekly Update" });
+  await postMessageWithJoin(client, meta.header.channel, blocks);
 
   await client.views.update({
     view_id: view.id,
@@ -413,4 +412,5 @@ http.get("/", (_req, res) => res.send("OK"));
   await app.start(PORT);
   http.listen(PORT, () => console.log(`HTTP healthcheck on port ${PORT}`));
   console.log("⚡ Maker Update app running (Web Service mode)");
-})();
+
+  // --- Keepalive for Render Free (prevent spin
