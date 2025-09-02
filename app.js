@@ -12,44 +12,32 @@ const app = new App({
 
 // ---------- Utilities ----------
 
-// Find a block in view.state.values by prefix (because our block_ids are suffixed per project)
 function getBlock(values, prefix) {
   const key = Object.keys(values).find((k) => k.startsWith(prefix));
   return key ? values[key] : undefined;
 }
 
-// Convert Slack rich_text to simple mrkdwn (handles bullets, text, links, emoji, user mentions)
+// Convert Slack rich_text to mrkdwn
 function richToMrkdwn(rt) {
   if (!rt) return "";
-  const out = [];
-
   function walk(el) {
     if (!el) return "";
     switch (el.type) {
-      case "rich_text":
-        return (el.elements || []).map(walk).join("");
-      case "rich_text_section":
-        return (el.elements || []).map(walk).join("");
-      case "text":
-        return el.text || "";
-      case "emoji":
-        // Slack may send unicode; name is safe to render as :name:
-        return el.name ? `:${el.name}:` : "";
-      case "link":
-        return el.url ? `<${el.url}|${el.text || el.url}>` : "";
-      case "user":
-        return el.user_id ? `<@${el.user_id}>` : "";
+      case "rich_text": return (el.elements || []).map(walk).join("");
+      case "rich_text_section": return (el.elements || []).map(walk).join("");
+      case "text": return el.text || "";
+      case "emoji": return el.name ? `:${el.name}:` : "";
+      case "link": return el.url ? `<${el.url}|${el.text || el.url}>` : "";
+      case "user": return el.user_id ? `<@${el.user_id}>` : "";
       case "rich_text_list": {
-        const items = (el.elements || []).map((li) =>
+        const items = (el.elements || []).map(li =>
           "- " + (li.elements || []).map(walk).join("")
         );
         return items.join("\n") + "\n";
       }
-      default:
-        return "";
+      default: return "";
     }
   }
-
   return walk(rt).trim();
 }
 
@@ -88,11 +76,7 @@ function headerModal({ userId } = {}) {
         type: "input",
         block_id: "name_user",
         label: { type: "plain_text", text: "Your Slack user" },
-        element: {
-          type: "users_select",
-          initial_user: userId,
-          action_id: "val",
-        },
+        element: { type: "users_select", initial_user: userId, action_id: "val" },
       },
       {
         type: "input",
@@ -122,10 +106,7 @@ function headerModal({ userId } = {}) {
           type: "plain_text_input",
           multiline: true,
           action_id: "val",
-          placeholder: {
-            type: "plain_text",
-            text: "You can use emojis (:rocket:) and bullets (-, •) when posting",
-          },
+          placeholder: { type: "plain_text", text: "Emojis (:rocket:) & bullets (-, •) supported when posted" },
         },
       },
     ],
@@ -137,37 +118,30 @@ const RAG = ["Green", "Yellow", "Red"];
 const GTM = ["Discovery", "Alpha", "Beta", "GA"];
 const PHASE = ["Design", "Build", "QA", "Deploy"];
 
-/** Fresh project modal each time (unique block_ids so Slack doesn't retain previous values) */
 function projectModal(meta) {
-  const idx = meta.projects.length; // 0-based index for next project
+  const idx = meta.projects.length; // next project index
   return {
     type: "modal",
     callback_id: "project_submit",
     title: { type: "plain_text", text: `Project ${idx + 1}` },
-    submit: { type: "plain_text", text: "Save" }, // Slack requires at least one of submit/close
+    submit: { type: "plain_text", text: "Save & Post" }, // clearer, and we now handle it
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {
         type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*Add one project, then click* *Add another* *or* *Done*.",
-        },
+        text: { type: "mrkdwn", text: "*Add one project, then click* *Add another* *or* *Done*." },
       },
       {
         type: "input",
         block_id: `p_name_${idx}`,
         label: { type: "plain_text", text: "Project name" },
-        element: { type: "plain_text_input", action_id: "val" }, // no initial_value => empty
+        element: { type: "plain_text_input", action_id: "val" },
       },
       {
         type: "input",
         block_id: `p_tldr_${idx}`,
         label: { type: "plain_text", text: "TL;DR (rich text)" },
-        element: {
-          type: "rich_text_input", // gives toolbar: bullets, bold, emoji
-          action_id: "val",
-        },
+        element: { type: "rich_text_input", action_id: "val" }, // toolbar
       },
       {
         type: "input",
@@ -176,10 +150,7 @@ function projectModal(meta) {
         element: {
           type: "static_select",
           action_id: "val",
-          options: RAG.map((r) => ({
-            text: { type: "plain_text", text: r },
-            value: r,
-          })),
+          options: RAG.map((r) => ({ text: { type: "plain_text", text: r }, value: r })),
         },
       },
       {
@@ -189,10 +160,7 @@ function projectModal(meta) {
         element: {
           type: "static_select",
           action_id: "val",
-          options: GTM.map((g) => ({
-            text: { type: "plain_text", text: g },
-            value: g,
-          })),
+          options: GTM.map((g) => ({ text: { type: "plain_text", text: g }, value: g })),
         },
       },
       {
@@ -209,27 +177,15 @@ function projectModal(meta) {
         element: {
           type: "static_select",
           action_id: "val",
-          options: PHASE.map((p) => ({
-            text: { type: "plain_text", text: p },
-            value: p,
-          })),
+          options: PHASE.map((p) => ({ text: { type: "plain_text", text: p }, value: p })),
         },
       },
       {
         type: "actions",
         block_id: `next_action_${idx}`,
         elements: [
-          {
-            type: "button",
-            text: { type: "plain_text", text: "➕ Add another" },
-            action_id: "add_another",
-            style: "primary",
-          },
-          {
-            type: "button",
-            text: { type: "plain_text", text: "✅ Done" },
-            action_id: "done",
-          },
+          { type: "button", text: { type: "plain_text", text: "➕ Add another" }, action_id: "add_another", style: "primary" },
+          { type: "button", text: { type: "plain_text", text: "✅ Done" }, action_id: "done" },
         ],
       },
     ],
@@ -237,7 +193,6 @@ function projectModal(meta) {
   };
 }
 
-/** Compose final message blocks */
 function buildMessage(header, projects) {
   const submittedBy = header.user ? `<@${header.user}>` : header.name || "(unknown)";
   const head =
@@ -286,13 +241,12 @@ app.view("header_submit", async ({ ack, view }) => {
   const header = {
     channel: vals.post_channel?.val?.selected_conversation,
     date: vals.date?.val?.selected_date,
-    user: vals.name_user?.val?.selected_user, // user id for mention
+    user: vals.name_user?.val?.selected_user,
     squad: vals.squad?.val?.selected_option?.value,
     roadmap: vals.roadmap?.val?.value,
     focus: vals.focus?.val?.value,
   };
   const meta = { header, projects: [] };
-
   await ack({ response_action: "push", view: projectModal(meta) });
 });
 
@@ -311,7 +265,7 @@ app.action("add_another", async ({ ack, body, client }) => {
   const phase = getBlock(vals, "p_phase_")?.val?.selected_option?.value;
 
   let tldr = "";
-  if (tldrVal?.value) tldr = tldrVal.value; // fallback if Slack returns plain text
+  if (tldrVal?.value) tldr = tldrVal.value;
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
   meta.projects.push({ name, tldr, rag, gtm, launch, phase });
@@ -347,6 +301,44 @@ app.action("done", async ({ ack, body, client }) => {
 
   await client.views.update({
     view_id: body.view.id,
+    view: {
+      type: "modal",
+      title: { type: "plain_text", text: "Done" },
+      close: { type: "plain_text", text: "Close" },
+      blocks: [{ type: "section", text: { type: "mrkdwn", text: "✅ Your update was posted!" } }],
+    },
+  });
+});
+
+// NEW: Handle clicking the modal's "Save & Post" (view submission)
+app.view("project_submit", async ({ ack, body, view, client }) => {
+  console.log("Project submit (Save & Post)");
+  const meta = JSON.parse(view.private_metadata);
+  const vals = view.state.values;
+
+  const name = getBlock(vals, "p_name_")?.val?.value;
+  const tldrVal = getBlock(vals, "p_tldr_")?.val;
+  const rag = getBlock(vals, "p_rag_")?.val?.selected_option?.value;
+  const gtm = getBlock(vals, "p_gtm_")?.val?.selected_option?.value;
+  const launch = getBlock(vals, "p_launch_")?.val?.selected_date;
+  const phase = getBlock(vals, "p_phase_")?.val?.selected_option?.value;
+
+  let tldr = "";
+  if (tldrVal?.value) tldr = tldrVal.value;
+  else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
+
+  if (name) {
+    meta.projects.push({ name, tldr, rag, gtm, launch, phase });
+  }
+
+  // Ack first (required), then post & replace the modal
+  await ack();
+
+  const blocks = buildMessage(meta.header, meta.projects);
+  await client.chat.postMessage({ channel: meta.header.channel, blocks, text: "Maker Biweekly Update" });
+
+  await client.views.update({
+    view_id: view.id,
     view: {
       type: "modal",
       title: { type: "plain_text", text: "Done" },
