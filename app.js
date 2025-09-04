@@ -410,4 +410,17 @@ app.view("project_submit", async ({ ack, view, client }) => {
 });
 
 // Global error log
-app
+app.error((err) => {
+  console.error("Bolt App Error:", err);
+});
+
+// ---------- Render Free healthcheck ----------
+const http = express();
+const PORT = process.env.PORT || 3000;
+http.get("/", (_req, res) => res.send("OK"));
+
+(async () => {
+  await app.start(PORT);
+  http.listen(PORT, () => console.log(`HTTP healthcheck on port ${PORT}`));
+  console.log("⚡ Maker Update app running (Web Service mode)");
+})();
