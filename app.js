@@ -214,11 +214,11 @@ function buildMessage(metaHeader, projects) {
   const today = dayjs().format("YYYY-MM-DD");
   const submittedBy = metaHeader.user ? `<@${metaHeader.user}>` : "(unknown)";
   const head =
-    `*🧱 MAKER BIWEEKLY UPDATE*\n` +
+    `*MAKER BIWEEKLY UPDATE*\n` +
     `*Date:* ${today}   *Submitted by:* ${submittedBy}\n` +
     `*Squad:* ${metaHeader.squad}` +
     (metaHeader.roadmap ? `   *Roadmap:* ${asLink(metaHeader.roadmap)}` : "") +
-    `\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${metaHeader.focus || "_(none provided)_"}\n\n*PROJECT UPDATES*`;
+    `\n\n\n*SUMMARY OF FOCUS AREAS THIS SPRINT*\n${metaHeader.focus || "_(none provided)_"}\n\n\n*PROJECT UPDATES*`;
 
   const blocks = [{ type: "section", text: { type: "mrkdwn", text: head } }, { type: "divider" }];
 
@@ -412,5 +412,4 @@ http.get("/", (_req, res) => res.send("OK"));
   await app.start(PORT);
   http.listen(PORT, () => console.log(`HTTP healthcheck on port ${PORT}`));
   console.log("⚡ Maker Update app running (Web Service mode)");
-
-  // --- Keepalive for Render Free (prevent spin
+})();
