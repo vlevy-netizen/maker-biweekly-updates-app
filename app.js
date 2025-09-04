@@ -60,6 +60,7 @@ const RAG_EMOJI = {
 const RAG = ["Green", "Yellow", "Red", "Paused", "Completed"];
 const GTM = ["Pre-Alpha", "Alpha", "Beta", "GA", "Global"];
 const PHASE = ["Design", "Build/Development", "QA/UAT", "Deployment", "Hypercare"];
+const LAUNCH_Q = ["Q3 2025", "Q4 2025", "Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"];
 
 // ---------- UI BUILDERS ----------
 function headerModal({ userId }) {
@@ -180,9 +181,19 @@ function projectModal(meta, existing = null) {
       {
         type: "input",
         optional: true,
-        block_id: `p_launch_${idx}`,
-        label: { type: "plain_text", text: "Target launch date" },
-        element: { type: "datepicker", action_id: "val", initial_date: existing?.launch || undefined },
+        block_id: `p_launchq_${idx}`,
+        label: { type: "plain_text", text: "Target launch quarter" },
+        element: {
+          type: "static_select",
+          action_id: "val",
+          initial_option: existing?.launchQ
+            ? { text: { type: "plain_text", text: existing.launchQ }, value: existing.launchQ }
+            : undefined,
+          options: LAUNCH_Q.map((q) => ({
+            text: { type: "plain_text", text: q },
+            value: q,
+          })),
+        },
       },
       {
         type: "input",
@@ -230,7 +241,7 @@ function buildMessage(metaHeader, projects) {
     if (p.tldr) lines.push(`*TL;DR*\n${p.tldr}`);
     lines.push(
       `*RAG:* ${ragIcon} ${p.rag}   *GTM:* ${p.gtm}` +
-        (p.launch ? `   *Target launch:* ${p.launch}` : "")
+        (p.launchQ ? `   *Target launch quarter:* ${p.launchQ}` : "")
     );
     lines.push(`*Phase:* ${p.phase}`);
 
@@ -304,14 +315,14 @@ app.action("add_another", async ({ ack, body, client }) => {
   const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
   const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
   const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
-  const launch = getBlock(vals, `p_launch_${idx}`)?.val?.selected_date;
+  const launchQ = getBlock(vals, `p_launchq_${idx}`)?.val?.selected_option?.value;
   const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
 
   let tldr = "";
   if (tldrVal?.value) tldr = tldrVal.value;
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
-  meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
+  meta.projects.push({ name, jira, tldr, rag, gtm, launchQ, phase });
   await client.views.update({ view_id: body.view.id, view: projectModal(meta) });
 });
 
@@ -340,12 +351,12 @@ app.action("done", async ({ ack, body, client }) => {
     const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
     const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
     const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
-    const launch = getBlock(vals, `p_launch_${idx}`)?.val?.selected_date;
+    const launchQ = getBlock(vals, `p_launchq_${idx}`)?.val?.selected_option?.value;
     const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
     let tldr = "";
     if (tldrVal?.value) tldr = tldrVal.value;
     else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
-    meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
+    meta.projects.push({ name, jira, tldr, rag, gtm, launchQ, phase });
   }
 
   const blocks = buildMessage(meta.header, meta.projects);
@@ -374,14 +385,14 @@ app.view("project_submit", async ({ ack, view, client }) => {
   const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
   const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
   const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
-  const launch = getBlock(vals, `p_launch_${idx}`)?.val?.selected_date;
+  const launchQ = getBlock(vals, `p_launchq_${idx}`)?.val?.selected_option?.value;
   const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
 
   let tldr = "";
   if (tldrVal?.value) tldr = tldrVal.value;
   else if (tldrVal?.rich_text_value) tldr = richToMrkdwn(tldrVal.rich_text_value);
 
-  if (name) meta.projects.push({ name, jira, tldr, rag, gtm, launch, phase });
+  if (name) meta.projects.push({ name, jira, tldr, rag, gtm, launchQ, phase });
 
   await ack();
   const blocks = buildMessage(meta.header, meta.projects);
@@ -399,17 +410,4 @@ app.view("project_submit", async ({ ack, view, client }) => {
 });
 
 // Global error log
-app.error((err) => {
-  console.error("Bolt App Error:", err);
-});
-
-// ---------- Render Free healthcheck ----------
-const http = express();
-const PORT = process.env.PORT || 3000;
-http.get("/", (_req, res) => res.send("OK"));
-
-(async () => {
-  await app.start(PORT);
-  http.listen(PORT, () => console.log(`HTTP healthcheck on port ${PORT}`));
-  console.log("⚡ Maker Update app running (Web Service mode)");
-})();
+app
