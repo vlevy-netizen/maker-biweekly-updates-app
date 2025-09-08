@@ -61,6 +61,15 @@ const RAG = ["Green", "Yellow", "Red", "Paused", "Completed"];
 const GTM = ["Pre-Alpha", "Alpha", "Beta", "GA", "Global"];
 const PHASE = ["Design", "Build/Development", "QA/UAT", "Deployment", "Hypercare"];
 const LAUNCH_Q = ["Q3 2025", "Q4 2025", "Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"];
+const SQUADS = [
+  "Clarity",
+  "Comms & Login",
+  "Communications Platform",
+  "Customer Delight",
+  "Payment Differentiation",
+  "Payment Workflows",
+  "Payments Platform",
+];
 
 // ---------- UI BUILDERS ----------
 function headerModal({ userId }) {
@@ -90,9 +99,10 @@ function headerModal({ userId }) {
         element: {
           type: "static_select",
           action_id: "val",
-          options: ["Payments", "Platform", "Client Delight", "Data", "Staff Workflows"].map(
-            (s) => ({ text: { type: "plain_text", text: s }, value: s })
-          ),
+          options: SQUADS.map((s) => ({
+            text: { type: "plain_text", text: s },
+            value: s,
+          })),
         },
       },
       {
