@@ -1,123 +1,89 @@
 # Slack Maker Update Bot
 
-A Slack bot for biweekly maker updates, deployed on AWS Lambda. This bot helps teams collect and organize project status updates through an interactive Slack interface.
+A simple and effective Slack bot for collecting biweekly maker updates, deployed on AWS Lambda. This bot provides an interactive modal form for team members to submit their project status updates.
+
+## ✅ Current Status
+
+**The bot is fully functional and deployed!** The slash command `/maker-biweekly-update` opens a modal form that collects:
+- Accomplishments
+- Challenges faced
+- Goals for the next period
 
 ## Features
 
-- **Interactive Modal Forms**: Multi-step forms for collecting project updates
-- **Rich Text Support**: Rich text input for detailed project descriptions
-- **Project Management**: Add multiple projects with status tracking
-- **Slash Commands**: Easy access via `/maker-biweekly-update` command
+- **Simple Modal Form**: Clean, easy-to-use interface for status updates
+- **Slash Command**: Quick access via `/maker-biweekly-update`
 - **AWS Lambda Deployment**: Serverless, cost-effective hosting
-- **Persistent Data**: Maintains form state across interactions
+- **Signature Verification**: Secure request validation
+- **Direct Channel Posting**: Updates are posted directly to the channel
 
 ## Architecture
 
 - **Frontend**: Slack Block Kit UI components
 - **Backend**: Node.js with Slack Bolt framework
 - **Deployment**: AWS Lambda with API Gateway
-- **Storage**: In-memory (can be extended to DynamoDB)
+- **Security**: Manual signature verification for slash commands
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ 
-- AWS CLI configured
+- Node.js 18+
+- AWS CLI configured with appropriate permissions
 - Slack App with Bot Token and Signing Secret
 
-### Local Development
+### 1. Clone and Setup
 
-1. **Clone the repository**:
-   ```bash
-   git clone <your-github-repo-url>
-   cd slack_template
-   ```
+```bash
+git clone <your-repo-url>
+cd slack_template
+npm install
+```
 
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+### 2. Configure Environment
 
-3. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Slack tokens
-   ```
+Create a `.env` file with your Slack credentials:
 
-4. **Run locally** (Socket Mode):
-   ```bash
-   node lambda_handler.js
-   ```
+```bash
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_SIGNING_SECRET=your-signing-secret
+```
 
-### AWS Lambda Deployment
+### 3. Deploy to AWS Lambda
 
-1. **Deploy to Lambda**:
-   ```bash
-   export AWS_PROFILE=your-profile
-   ./deploy-lambda.sh deploy
-   ```
+```bash
+export AWS_PROFILE=your-profile
+./deploy-lambda.sh deploy
+```
 
-2. **Update existing deployment**:
-   ```bash
-   ./deploy-lambda.sh update
-   ```
+### 4. Configure Slack App
 
-3. **Configure Slack App**:
-   - Disable Socket Mode
-   - Set Event Subscriptions URL to your Lambda webhook
-   - Subscribe to bot events: `app_mention`, `message.channels`, etc.
-   - Add slash command: `/maker-biweekly-update`
+1. **Slash Commands**:
+   - Create command: `/maker-biweekly-update`
+   - Set Request URL: `https://your-api-gateway-url/prod/slack/events`
 
-## Production Deployment Checklist
+2. **Interactive Components**:
+   - Enable Interactivity
+   - Set Request URL: `https://your-api-gateway-url/prod/slack/events`
 
-### ✅ Infrastructure Status
-- [x] **Lambda Function**: `slack-maker-update-bot` deployed and active
-- [x] **API Gateway**: Webhook URL configured and accessible
-- [x] **Environment Variables**: Bot token and signing secret configured
-- [x] **IAM Permissions**: Lambda execution role properly configured
+3. **OAuth & Permissions**:
+   - Bot Token Scopes: `chat:write`, `commands`, `users:read`
 
-### 🔧 Slack App Configuration Required
-1. **Event Subscriptions**:
-   - [ ] Disable Socket Mode
-   - [ ] Set Request URL: `https://olrc9t3r7e.execute-api.us-east-1.amazonaws.com/prod/slack/events`
-   - [ ] Subscribe to Bot Events: `app_mention`, `message.channels`, `message.groups`, `message.im`, `message.mpim`
-
-2. **Slash Commands**:
-   - [ ] Create command: `/maker-biweekly-update`
-   - [ ] Set Request URL: `https://olrc9t3r7e.execute-api.us-east-1.amazonaws.com/prod/slack/events`
-
-3. **Interactive Components**:
-   - [ ] Enable Interactivity
-   - [ ] Set Request URL: `https://olrc9t3r7e.execute-api.us-east-1.amazonaws.com/prod/slack/events`
-
-4. **OAuth & Permissions**:
-   - [ ] Bot Token Scopes: `app_mentions:read`, `channels:history`, `chat:write`, `commands`, `groups:history`, `im:history`, `mpim:history`, `users:read`
-
-5. **Install App**:
-   - [ ] Install app to workspace
-   - [ ] Authorize permissions
+4. **Install App**:
+   - Install app to your workspace
+   - Authorize permissions
 
 ## Project Structure
 
 ```
 slack_template/
-├── lambda_handler.js      # Main Lambda-compatible bot code
+├── lambda_handler.js      # Main Lambda function code
 ├── package.json           # Node.js dependencies
 ├── package-lock.json      # Dependency lock file
 ├── deploy-lambda.sh       # AWS deployment script
 ├── README.md             # This file
-├── .env.example          # Environment variables template
-└── .gitignore            # Git ignore rules
-```
-
-## Environment Variables
-
-Create a `.env` file with:
-
-```bash
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_SIGNING_SECRET=your-signing-secret
+├── .env                  # Environment variables (create this)
+└── .env.example          # Environment variables template
 ```
 
 ## Usage
@@ -127,73 +93,101 @@ SLACK_SIGNING_SECRET=your-signing-secret
    /maker-biweekly-update
    ```
 
-2. **Follow the interactive form**:
-   - Fill in your name and team
-   - Add projects with details
-   - Use rich text for descriptions
-   - Submit when complete
+2. **Fill out the modal form**:
+   - Accomplishments: What you achieved
+   - Challenges: What obstacles you faced
+   - Goals: What you plan to accomplish next
 
-3. **Bot responses**:
-   - Confirms submission
-   - Provides summary of updates
-   - Handles errors gracefully
+3. **Submit**: The update will be posted to the channel
 
 ## Development
 
 ### Key Components
 
-- **Modal Builders**: `projectModal()`, `teamModal()` - UI construction
-- **Event Handlers**: Slash commands, button clicks, form submissions
-- **Rich Text Processing**: Converts between Slack rich text and markdown
-- **State Management**: Maintains form state across interactions
+- **Slash Command Handler**: Processes `/maker-biweekly-update` commands
+- **Modal Builder**: Creates the interactive form UI
+- **Signature Verification**: Validates requests from Slack
+- **Form Submission**: Handles modal submissions and posts to channel
 
-### Adding Features
+### Local Testing
 
-1. **New UI Elements**: Add to modal builders
-2. **New Commands**: Add slash command handlers
-3. **Data Persistence**: Extend to use DynamoDB
-4. **Notifications**: Add scheduled reminders
+For local development, you can test the Lambda function using:
+
+```bash
+# Test the function locally
+node -e "
+const handler = require('./lambda_handler.js');
+const testEvent = {
+  httpMethod: 'POST',
+  path: '/slack/events',
+  headers: {
+    'x-slack-signature': 'test-signature',
+    'x-slack-request-timestamp': Math.floor(Date.now() / 1000).toString()
+  },
+  body: 'command=/maker-biweekly-update&user_id=U123&channel_id=C123&trigger_id=T123'
+};
+handler.handler(testEvent, {});
+"
+```
 
 ## Deployment
 
-### AWS Lambda
+### AWS Lambda Configuration
 
-The bot is deployed as a serverless function with:
-
+The bot is deployed with:
 - **Runtime**: Node.js 18.x
 - **Memory**: 256 MB
 - **Timeout**: 30 seconds
-- **API Gateway**: RESTful webhook endpoint
+- **Environment Variables**: `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`
 
-### Cost Optimization
+### Update Deployment
 
-- **Pay-per-use**: Only charged for actual requests
-- **No idle costs**: Unlike traditional servers
-- **Auto-scaling**: Handles traffic spikes automatically
+To update the Lambda function:
+
+```bash
+./deploy-lambda.sh update
+```
+
+### Environment Variables
+
+Update Lambda environment variables:
+
+```bash
+aws lambda update-function-configuration \
+  --function-name slack-maker-update-bot \
+  --environment Variables='{SLACK_BOT_TOKEN=your-token,SLACK_SIGNING_SECRET=your-secret}'
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **URL Verification Failed**:
-   - Check Lambda function logs
-   - Verify webhook URL in Slack app settings
+1. **"dispatch_failed" Error**:
+   - Check that the signing secret matches your Slack app
+   - Verify the slash command URL is correct
+   - Check Lambda function logs in CloudWatch
 
-2. **Bot Not Responding**:
-   - Check environment variables
-   - Verify bot permissions in Slack
-   - Check CloudWatch logs
+2. **Modal Not Opening**:
+   - Verify bot token has `chat:write` permission
+   - Check that the trigger_id is valid
+   - Ensure the app is installed in the workspace
 
-3. **Deployment Errors**:
-   - Ensure AWS credentials are configured
-   - Check IAM permissions
-   - Verify region settings
+3. **Signature Verification Failed**:
+   - Confirm the signing secret is correct
+   - Check that the timestamp is within 5 minutes
+   - Verify the request body is not modified
 
 ### Debugging
 
-- **Local Testing**: Use Socket Mode for development
-- **Lambda Logs**: Check CloudWatch for runtime errors
-- **Slack Events**: Use Slack's Event Tester
+- **Check Lambda Logs**: `aws logs filter-log-events --log-group-name "/aws/lambda/slack-maker-update-bot"`
+- **Test Bot Token**: `curl -H "Authorization: Bearer YOUR_TOKEN" https://slack.com/api/auth.test`
+- **Verify Slack App**: Check app configuration at https://api.slack.com/apps
+
+## Security
+
+- **Signature Verification**: All requests are verified using Slack's signature validation
+- **Environment Variables**: Sensitive data stored in Lambda environment variables
+- **HTTPS Only**: All communication uses secure HTTPS
 
 ## Contributing
 
@@ -210,6 +204,6 @@ MIT License - see LICENSE file for details
 ## Support
 
 For issues and questions:
-- Check the troubleshooting section
+- Check the troubleshooting section above
 - Review AWS CloudWatch logs
-- Test with Socket Mode locally first
+- Test with a simple curl request to verify the Lambda function

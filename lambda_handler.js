@@ -1,25 +1,42 @@
 // Load environment variables from .env file
 require('dotenv').config();
 
-const { App, AwsLambdaReceiver } = require("@slack/bolt");
+const { App } = require("@slack/bolt");
+const crypto = require('crypto');
 const dayjs = require("dayjs");
-
-// --- Initialize AwsLambdaReceiver ---
-const receiver = new AwsLambdaReceiver({
-  signingSecret: process.env.SLACK_SIGNING_SECRET,
-});
-
-// --- Initialize Bolt (HTTP Mode for Lambda) ---
-const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
-  receiver: receiver,
-  processBeforeResponse: true, // Required for AWS Lambda
-});
 
 // ---------- Utilities ----------
 function getBlock(values, prefix) {
   const key = Object.keys(values).find((k) => k.startsWith(prefix));
   return key ? values[key] : undefined;
+}
+
+// Manual signature verification for slash commands
+function verifySlackSignature(signature, timestamp, body, signingSecret) {
+  console.log('Verifying signature with:', { signature, timestamp, body: body.substring(0, 100) + '...', signingSecret: signingSecret.substring(0, 8) + '...' });
+  
+  // Check if request is too old (replay attack protection)
+  const currentTime = Math.floor(Date.now() / 1000);
+  const requestTime = parseInt(timestamp);
+  if (Math.abs(currentTime - requestTime) > 300) { // 5 minutes
+    console.error('Request too old:', { currentTime, requestTime, diff: Math.abs(currentTime - requestTime) });
+    return false;
+  }
+  
+  const baseString = `v0:${timestamp}:${body}`;
+  const expectedSignature = 'v0=' + crypto
+    .createHmac('sha256', signingSecret)
+    .update(baseString)
+    .digest('hex');
+  
+  console.log('Expected signature:', expectedSignature);
+  console.log('Base string:', baseString.substring(0, 100) + '...');
+  console.log('Current time:', currentTime, 'Request time:', requestTime);
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
 }
 
 // Convert Slack rich_text to mrkdwn
@@ -291,217 +308,76 @@ async function postMessageWithJoin(client, channel, blocks, text = "Maker Biweek
   }
 }
 
-// ---------- HANDLERS ----------
-
-// Slash command
-app.command("/maker-biweekly-update", async ({ ack, body, client }) => {
-  await ack();
-  await client.views.open({
-    trigger_id: body.trigger_id,
-    view: headerModal({ userId: body.user_id }),
-  });
-});
-
-// Header submit
-app.view("header_submit", async ({ ack, view }) => {
-  const vals = view.state.values;
-  const incomingMeta = JSON.parse(view.private_metadata || "{}");
-  const header = {
-    channel: vals.post_channel?.val?.selected_conversation,
-    squad: vals.squad?.val?.selected_option?.value,
-    roadmap: vals.roadmap_link?.val?.value,
-    user: incomingMeta.user,
-  };
-  const focusVal = vals.focus_rich?.val;
-  let focus = "";
-  if (focusVal?.value) focus = focusVal.value;
-  else if (focusVal?.rich_text_value) focus = richToMrkdwn(focusVal.rich_text_value);
-  header.focus = focus;
-
-  const meta = { header, projects: [], user: incomingMeta.user };
-  await ack({ response_action: "push", view: projectModal(meta) });
-});
-
-// Add another
-app.action("add_another", async ({ ack, body, client }) => {
-  await ack();
-  const meta = JSON.parse(body.view.private_metadata);
-  const vals = body.view.state.values;
-  const idxKey = Object.keys(vals).find((k) => k.startsWith("p_name_"));
-  const idx = Number(idxKey.split("_").pop());
-
-  const name = getBlock(vals, `p_name_${idx}`)?.val?.value;
-  const jira = getBlock(vals, `p_jira_${idx}`)?.val?.value;
-  const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
-  const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
-  const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
-  const launchQ = getBlock(vals, `p_launchq_${idx}`)?.val?.selected_option?.value;
-  const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
-
-  let tldr = "";
-  let tldrRichText = null;
-  if (tldrVal?.value) tldr = tldrVal.value;
-  else if (tldrVal?.rich_text_value) {
-    tldr = richToMrkdwn(tldrVal.rich_text_value);
-    tldrRichText = tldrVal.rich_text_value;
-  }
-
-  meta.projects.push({ name, jira, tldr, tldrRichText, rag, gtm, launchQ, phase });
-  await client.views.update({ view_id: body.view.id, view: projectModal(meta) });
-});
-
-// Back
-app.action("back", async ({ ack, body, client }) => {
-  await ack();
-  const meta = JSON.parse(body.view.private_metadata);
-  const last = meta.projects.pop();
-  if (!last) return;
-  const existing = { ...last, idx: meta.projects.length };
-  await client.views.update({ view_id: body.view.id, view: projectModal(meta, existing) });
-});
-
-// Done
-app.action("done", async ({ ack, body, client }) => {
-  await ack();
-  const meta = JSON.parse(body.view.private_metadata);
-  const vals = body.view.state.values;
-  const idxKey = Object.keys(vals).find((k) => k.startsWith("p_name_"));
-  const idx = Number(idxKey.split("_").pop());
-  const nameBlock = getBlock(vals, `p_name_${idx}`);
-
-  if (nameBlock?.val?.value) {
-    const name = nameBlock.val.value;
-    const jira = getBlock(vals, `p_jira_${idx}`)?.val?.value;
-    const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
-    const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
-    const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
-    const launchQ = getBlock(vals, `p_launchq_${idx}`)?.val?.selected_option?.value;
-    const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
-    let tldr = "";
-    let tldrRichText = null;
-    if (tldrVal?.value) tldr = tldrVal.value;
-    else if (tldrVal?.rich_text_value) {
-      tldr = richToMrkdwn(tldrVal.rich_text_value);
-      tldrRichText = tldrVal.rich_text_value;
-    }
-    meta.projects.push({ name, jira, tldr, tldrRichText, rag, gtm, launchQ, phase });
-  }
-
-  const blocks = buildMessage(meta.header, meta.projects);
-  await postMessageWithJoin(client, meta.header.channel, blocks);
-
-  await client.views.update({
-    view_id: body.view.id,
-    view: {
-      type: "modal",
-      title: { type: "plain_text", text: "Done" },
-      close: { type: "plain_text", text: "Close" },
-      blocks: [{ type: "section", text: { type: "mrkdwn", text: "✅ Your update was posted!" } }],
-    },
-  });
-});
-
-// Save & Post
-app.view("project_submit", async ({ ack, view, client }) => {
-  const meta = JSON.parse(view.private_metadata);
-  const vals = view.state.values;
-  const idxKey = Object.keys(vals).find((k) => k.startsWith("p_name_"));
-  const idx = Number(idxKey.split("_").pop());
-
-  const name = getBlock(vals, `p_name_${idx}`)?.val?.value;
-  const jira = getBlock(vals, `p_jira_${idx}`)?.val?.value;
-  const tldrVal = getBlock(vals, `p_tldr_${idx}`)?.val;
-  const rag = getBlock(vals, `p_rag_${idx}`)?.val?.selected_option?.value;
-  const gtm = getBlock(vals, `p_gtm_${idx}`)?.val?.selected_option?.value;
-  const launchQ = getBlock(vals, `p_launchq_${idx}`)?.val?.selected_option?.value;
-  const phase = getBlock(vals, `p_phase_${idx}`)?.val?.selected_option?.value;
-
-  let tldr = "";
-  let tldrRichText = null;
-  if (tldrVal?.value) tldr = tldrVal.value;
-  else if (tldrVal?.rich_text_value) {
-    tldr = richToMrkdwn(tldrVal.rich_text_value);
-    tldrRichText = tldrVal.rich_text_value;
-  }
-
-  if (name) meta.projects.push({ name, jira, tldr, tldrRichText, rag, gtm, launchQ, phase });
-
-  await ack();
-  const blocks = buildMessage(meta.header, meta.projects);
-  await postMessageWithJoin(client, meta.header.channel, blocks);
-
-  await client.views.update({
-    view_id: view.id,
-    view: {
-      type: "modal",
-      title: { type: "plain_text", text: "Done" },
-      close: { type: "plain_text", text: "Close" },
-      blocks: [{ type: "section", text: { type: "mrkdwn", text: "✅ Your update was posted!" } }],
-    },
-  });
-});
-
-// Global error log
-app.error((err) => {
-  console.error("Bolt App Error:", err);
-});
-
-// ---------- Lambda Handler ----------
+// ---------- Simple Lambda Handler ----------
 exports.handler = async (event, context) => {
   try {
     console.log("Received event:", JSON.stringify(event, null, 2));
     
-    // Handle URL verification challenge from Slack
-    if (event.body) {
-      let body;
-      try {
-        body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-      } catch (e) {
-        // Handle form-encoded data (slash commands)
-        console.log("Parsing form-encoded data");
+    // Check if this is a slash command
+    if (event.httpMethod === 'POST' && event.path === '/slack/events' && event.body) {
+      const contentType = event.headers['Content-Type'] || event.headers['content-type'];
+      
+      if (contentType === 'application/x-www-form-urlencoded') {
+        // This is a slash command - handle it directly
+        const signature = event.headers['X-Slack-Signature'] || event.headers['x-slack-signature'];
+        const timestamp = event.headers['X-Slack-Request-Timestamp'] || event.headers['x-slack-request-timestamp'];
+        
+        console.log('Slash command detected:', { signature, timestamp });
+        
+        // Verify signature
+        if (!verifySlackSignature(signature, timestamp, event.body, process.env.SLACK_SIGNING_SECRET)) {
+          console.error('Invalid signature');
+          return {
+            statusCode: 401,
+            body: JSON.stringify({ error: "Unauthorized" })
+          };
+        }
+        
+        // Parse the form data
         const params = new URLSearchParams(event.body);
-        body = Object.fromEntries(params);
-        console.log("Parsed form data:", body);
-      }
-      
-      // Slack URL verification challenge
-      if (body.type === 'url_verification') {
-        console.log("URL verification challenge received");
-        return {
-          statusCode: 200,
-          body: body.challenge
-        };
-      }
-      
-      // Handle slash commands
-      if (body.command && body.command === '/maker-biweekly-update') {
-        console.log("Slash command received:", body.command);
+        const body = Object.fromEntries(params);
         
-        // Convert slash command to proper event format for Bolt
-        const slashEvent = {
-          ...event,
-          body: JSON.stringify({
-            type: 'slash_command',
-            command: body.command,
-            text: body.text || '',
-            user_id: body.user_id,
-            channel_id: body.channel_id,
-            team_id: body.team_id,
-            response_url: body.response_url,
-            trigger_id: body.trigger_id,
-            token: body.token
-          })
-        };
+        console.log('Parsed slash command body:', body);
         
-        // Process with AwsLambdaReceiver
-        const handler = await receiver.start();
-        return handler(slashEvent, context);
+        // Check if it's our slash command
+        if (body.command === '/maker-biweekly-update') {
+          // Create a simple app instance for the slash command
+          const app = new App({
+            token: process.env.SLACK_BOT_TOKEN,
+            signingSecret: process.env.SLACK_SIGNING_SECRET || 'dummy-secret-for-initialization',
+            processBeforeResponse: true,
+          });
+          
+          // Open the modal directly
+          try {
+            const result = await app.client.views.open({
+              token: process.env.SLACK_BOT_TOKEN,
+              trigger_id: body.trigger_id,
+              view: headerModal({ userId: body.user_id }),
+            });
+            
+            console.log('Modal opened successfully:', result);
+            
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ response_type: 'ephemeral', text: 'Opening biweekly update form...' })
+            };
+          } catch (error) {
+            console.error('Error opening modal:', error);
+            return {
+              statusCode: 500,
+              body: JSON.stringify({ error: "Failed to open modal" })
+            };
+          }
+        }
       }
     }
     
-    // Use the AwsLambdaReceiver to handle all other Slack events
-    const handler = await receiver.start();
-    return handler(event, context);
+    // For other events, return 404
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ error: "Not found" })
+    };
     
   } catch (error) {
     console.error("Lambda handler error:", error);
