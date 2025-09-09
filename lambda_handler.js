@@ -448,7 +448,16 @@ exports.handler = async (event, context) => {
     
     // Handle URL verification challenge from Slack
     if (event.body) {
-      const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+      let body;
+      try {
+        body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+      } catch (e) {
+        // Handle form-encoded data (slash commands)
+        console.log("Parsing form-encoded data");
+        const params = new URLSearchParams(event.body);
+        body = Object.fromEntries(params);
+        console.log("Parsed form data:", body);
+      }
       
       // Slack URL verification challenge
       if (body.type === 'url_verification') {
@@ -458,22 +467,37 @@ exports.handler = async (event, context) => {
           body: body.challenge
         };
       }
+      
+      // Handle slash commands
+      if (body.command && body.command === '/maker-biweekly-update') {
+        console.log("Slash command received:", body.command);
+        
+        // Convert slash command to proper event format for Bolt
+        const slashEvent = {
+          ...event,
+          body: JSON.stringify({
+            type: 'slash_command',
+            command: body.command,
+            text: body.text || '',
+            user_id: body.user_id,
+            channel_id: body.channel_id,
+            team_id: body.team_id,
+            response_url: body.response_url,
+            trigger_id: body.trigger_id,
+            token: body.token
+          })
+        };
+        
+        // Process with AwsLambdaReceiver
+        const handler = await receiver.start();
+        return handler(slashEvent, context);
+      }
     }
     
-    // Handle the Slack event
-    const result = await app.processEvent(event);
+    // Use the AwsLambdaReceiver to handle all other Slack events
+    const handler = await receiver.start();
+    return handler(event, context);
     
-    if (result) {
-      return {
-        statusCode: 200,
-        body: JSON.stringify(result)
-      };
-    } else {
-      return {
-        statusCode: 200,
-        body: "OK"
-      };
-    }
   } catch (error) {
     console.error("Lambda handler error:", error);
     return {
