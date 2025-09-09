@@ -1,14 +1,19 @@
 // Load environment variables from .env file
 require('dotenv').config();
 
-const { App } = require("@slack/bolt");
+const { App, AwsLambdaReceiver } = require("@slack/bolt");
 const dayjs = require("dayjs");
+
+// --- Initialize AwsLambdaReceiver ---
+const receiver = new AwsLambdaReceiver({
+  signingSecret: process.env.SLACK_SIGNING_SECRET,
+});
 
 // --- Initialize Bolt (HTTP Mode for Lambda) ---
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
-  signingSecret: process.env.SLACK_SIGNING_SECRET,
-  // Remove socketMode and appToken for Lambda deployment
+  receiver: receiver,
+  processBeforeResponse: true, // Required for AWS Lambda
 });
 
 // ---------- Utilities ----------

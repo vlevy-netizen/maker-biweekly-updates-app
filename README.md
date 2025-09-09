@@ -36,7 +36,7 @@ A Slack bot for biweekly maker updates, deployed on AWS Lambda. This bot helps t
 
 2. **Install dependencies**:
    ```bash
-   ./setup.sh
+   npm install
    ```
 
 3. **Configure environment**:
@@ -47,7 +47,7 @@ A Slack bot for biweekly maker updates, deployed on AWS Lambda. This bot helps t
 
 4. **Run locally** (Socket Mode):
    ```bash
-   node vanessa_code.js
+   node lambda_handler.js
    ```
 
 ### AWS Lambda Deployment
@@ -69,17 +69,45 @@ A Slack bot for biweekly maker updates, deployed on AWS Lambda. This bot helps t
    - Subscribe to bot events: `app_mention`, `message.channels`, etc.
    - Add slash command: `/maker-biweekly-update`
 
+## Production Deployment Checklist
+
+### ✅ Infrastructure Status
+- [x] **Lambda Function**: `slack-maker-update-bot` deployed and active
+- [x] **API Gateway**: Webhook URL configured and accessible
+- [x] **Environment Variables**: Bot token and signing secret configured
+- [x] **IAM Permissions**: Lambda execution role properly configured
+
+### 🔧 Slack App Configuration Required
+1. **Event Subscriptions**:
+   - [ ] Disable Socket Mode
+   - [ ] Set Request URL: `https://olrc9t3r7e.execute-api.us-east-1.amazonaws.com/prod/slack/events`
+   - [ ] Subscribe to Bot Events: `app_mention`, `message.channels`, `message.groups`, `message.im`, `message.mpim`
+
+2. **Slash Commands**:
+   - [ ] Create command: `/maker-biweekly-update`
+   - [ ] Set Request URL: `https://olrc9t3r7e.execute-api.us-east-1.amazonaws.com/prod/slack/events`
+
+3. **Interactive Components**:
+   - [ ] Enable Interactivity
+   - [ ] Set Request URL: `https://olrc9t3r7e.execute-api.us-east-1.amazonaws.com/prod/slack/events`
+
+4. **OAuth & Permissions**:
+   - [ ] Bot Token Scopes: `app_mentions:read`, `channels:history`, `chat:write`, `commands`, `groups:history`, `im:history`, `mpim:history`, `users:read`
+
+5. **Install App**:
+   - [ ] Install app to workspace
+   - [ ] Authorize permissions
+
 ## Project Structure
 
 ```
 slack_template/
-├── lambda_handler.js      # Lambda-compatible bot code
-├── vanessa_code.js        # Original Socket Mode bot code
+├── lambda_handler.js      # Main Lambda-compatible bot code
 ├── package.json           # Node.js dependencies
+├── package-lock.json      # Dependency lock file
 ├── deploy-lambda.sh       # AWS deployment script
-├── setup.sh              # Local setup script
 ├── README.md             # This file
-├── README-Lambda.md      # Detailed Lambda deployment guide
+├── .env.example          # Environment variables template
 └── .gitignore            # Git ignore rules
 ```
 
